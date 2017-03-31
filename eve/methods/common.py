@@ -22,6 +22,7 @@ from eve.utils import config
 from eve.utils import debug_error_message
 from eve.utils import document_etag
 from eve.utils import parse_request
+from eve.utils import ParsedRequest
 from eve.versioning import get_data_version_relation_document
 from eve.versioning import resolve_document_version
 from flask import Response
@@ -673,7 +674,7 @@ def resolve_embedded_fields(resource, req):
     return enabled_embedded_fields
 
 
-def embedded_document(reference, data_relation, field_name):
+def embedded_document(reference, data_relation, field_name, child_embed):
     """ Returns a document to be embedded by reference using data_relation
     taking into account document versions
 
@@ -709,7 +710,10 @@ def embedded_document(reference, data_relation, field_name):
         subresource = reference.collection if isinstance(reference, DBRef) \
             else data_relation['resource']
         id_field = config.DOMAIN[subresource]['id_field']
-        embedded_doc = app.data.find_one(subresource, None,
+        # build a fake request to carry our embedded fields list
+        req = ParsedRequest()
+        req.embedded = json.dumps({ key: 1 for key in child_embed })
+        embedded_doc = app.data.find_one(subresource, req,
                                          **{id_field: reference.id
                                             if isinstance(reference, DBRef)
                                             else reference})
@@ -782,15 +786,17 @@ def resolve_embedded_documents(document, resource, embedded_fields):
     # NOTE(Gonéri): We resolve the embedded documents at the end.
     for field in sorted(embedded_fields, key=lambda a: a.count('.')):
         data_relation = field_definition(resource, field)['data_relation']
-        getter = lambda ref: embedded_document(ref, data_relation, field)  # noqa
+        getter = lambda ref, child_embed: embedded_document(ref, data_relation, field, child_embed)  # noqa
         fields_chain = field.split('.')
         last_field = fields_chain[-1]
         for subdocument in subdocuments(fields_chain[:-1], resource, document):
             if last_field not in subdocument:
                 continue
+
+            relevant_child_fields = [f.split('.')[-1] for f in embedded_fields if f.startswith(field + '.')]
+
             if isinstance(subdocument[last_field], list):
-                subdocument[last_field] = list(map(getter,
-                                                   subdocument[last_field]))
+                subdocument[last_field] = [getter(f, relevant_child_fields) for f in subdocument[last_field]]
             else:
                 subdocument[last_field] = getter(subdocument[last_field])
 
