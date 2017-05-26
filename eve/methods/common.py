@@ -800,7 +800,7 @@ def resolve_embedded_documents(document, resource, embedded_fields):
             if isinstance(subdocument[last_field], list):
                 subdocument[last_field] = [getter(f, relevant_child_fields) for f in subdocument[last_field]]
             else:
-                subdocument[last_field] = getter(subdocument[last_field])
+                subdocument[last_field] = getter(subdocument[last_field], relevant_child_fields)
 
 
 def resolve_media_files(document, resource):
